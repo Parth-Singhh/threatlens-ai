@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: threatlens-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: threatlens
+      POSTGRES_USER: threatlens
+      POSTGRES_PASSWORD: threatlens
+    ports:
+      - "5432:5432"
+    volumes:
+      - threatlens-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U threatlens -d threatlens"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    container_name: threatlens-api
+    restart: unless-stopped
+    environment:
+      APP_NAME: ThreatLens AI API
+      APP_VERSION: 0.1.0
+      DATABASE_URL: postgresql+psycopg://threatlens:threatlens@db:5432/threatlens
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: threatlens-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  threatlens-postgres-data:
