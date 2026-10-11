@@ -7,9 +7,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        // Inside Docker, localhost refers to the frontend container.
-        // Use the Compose service name to reach the FastAPI container.
-        target: process.env.DOCKER_ENV ? "http://backend:8000" : "http://localhost:8000",
+        // Docker Compose resolves service names on its internal network.
+        target: "http://backend:8000",
         changeOrigin: true,
       },
     },
