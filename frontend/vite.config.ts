@@ -7,7 +7,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        // Docker Compose resolves service names on its internal network.
+        target: "http://backend:8000",
         changeOrigin: true,
       },
     },
