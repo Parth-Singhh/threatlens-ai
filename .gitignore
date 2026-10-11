@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+backend/models/*.joblib
+backend/models/*metrics.json
+!backend/models/.gitkeep
