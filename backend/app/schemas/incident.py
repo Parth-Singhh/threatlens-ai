@@ -1,3 +1,4 @@
+
 from datetime import datetime
 from typing import Literal
 
@@ -12,9 +13,17 @@ IncidentType = Literal[
     "suspicious_screenshot",
     "other",
 ]
+
 IncidentPriority = Literal["p1", "p2", "p3", "p4"]
+
 IncidentStatus = Literal[
-    "submitted", "assigned", "investigating", "escalated", "waiting", "resolved", "closed"
+    "submitted",
+    "assigned",
+    "investigating",
+    "escalated",
+    "waiting",
+    "resolved",
+    "closed",
 ]
 
 
@@ -23,6 +32,15 @@ class IncidentCreate(BaseModel):
     title: str = Field(min_length=3, max_length=160)
     description: str = Field(min_length=10, max_length=5000)
     evidence_reference: str | None = Field(default=None, max_length=1000)
+
+
+class IncidentUpdate(BaseModel):
+    """Fields analysts can update during incident handling."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: IncidentStatus | None = None
+    assigned_analyst_id: int | None = Field(default=None, ge=1)
 
 
 class IncidentResponse(BaseModel):

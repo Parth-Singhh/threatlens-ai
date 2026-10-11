@@ -34,6 +34,18 @@ type Incident = {
 
 type AuthMode = "login" | "register";
 
+type IncidentUpdatePayload = {
+  status?:
+    | "submitted"
+    | "assigned"
+    | "investigating"
+    | "escalated"
+    | "waiting"
+    | "resolved"
+    | "closed";
+  assigned_analyst_id?: number | null;
+};
+
 const incidentTypes = [
   { value: "suspicious_email", label: "Suspicious email" },
   { value: "suspicious_url", label: "Suspicious URL" },
@@ -94,6 +106,11 @@ function App() {
   const [incidentTitle, setIncidentTitle] = useState("");
   const [incidentDescription, setIncidentDescription] = useState("");
   const [evidenceReference, setEvidenceReference] = useState("");
+  
+  const [analystSearch, setAnalystSearch] = useState("");
+  const [analystStatusFilter, setAnalystStatusFilter] = useState("all");
+  const [analystPriorityFilter, setAnalystPriorityFilter] = useState("all");
+  const [updatingIncidentId, setUpdatingIncidentId] = useState<number | null>(null);
 
   const loadIncidents = useCallback(async () => {
     const token = sessionStorage.getItem("threatlens_token");
@@ -183,7 +200,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === "client") {
+    if (user) {
       void loadIncidents();
     }
   }, [user, loadIncidents]);
@@ -312,6 +329,59 @@ function App() {
     }
   }
 
+  async function updateIncident(
+    incidentId: number,
+    changes: IncidentUpdatePayload,
+  ) {
+    const token = sessionStorage.getItem("threatlens_token");
+
+    if (!token) {
+      setIncidentError("Your session has expired. Please sign in again.");
+      return;
+    }
+
+    setUpdatingIncidentId(incidentId);
+    setIncidentError("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(`/api/incidents/${incidentId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(changes),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const detail = data.detail;
+        if (typeof detail === "string") throw new Error(detail);
+        if (Array.isArray(detail)) {
+          throw new Error(
+            detail
+              .map((item: { msg?: string }) => item.msg ?? "Invalid input")
+              .join(" "),
+          );
+        }
+        throw new Error("Could not update this incident. Please try again.");
+      }
+
+      setSuccessMessage(`Incident #${incidentId} updated successfully.`);
+      await loadIncidents();
+    } catch (requestError) {
+      setIncidentError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update the incident.",
+      );
+    } finally {
+      setUpdatingIncidentId(null);
+    }
+  }
+
   if (loading) {
     return (
       <main className="loading-screen">
@@ -331,6 +401,31 @@ function App() {
     const resolvedCount = incidents.filter(
       (item) => ["resolved", "closed"].includes(item.status),
     ).length;
+    const unassignedCount = incidents.filter(
+      (item) => item.assigned_analyst_id === null && !["resolved", "closed"].includes(item.status),
+    ).length;
+    const inProgressCount = incidents.filter((item) =>
+      ["assigned", "investigating", "escalated", "waiting"].includes(item.status),
+    ).length;
+    const filteredAnalystIncidents = incidents.filter((incident) => {
+      const search = analystSearch.trim().toLowerCase();
+      const matchesSearch =
+        !search ||
+        [
+          incident.title,
+          incident.description,
+          incident.incident_type,
+          incident.threat_category,
+          String(incident.id),
+          String(incident.reporter_id),
+          incident.evidence_reference ?? "",
+        ].some((value) => value.toLowerCase().includes(search));
+      const matchesStatus =
+        analystStatusFilter === "all" || incident.status === analystStatusFilter;
+      const matchesPriority =
+        analystPriorityFilter === "all" || incident.priority === analystPriorityFilter;
+      return matchesSearch && matchesStatus && matchesPriority;
+    });
 
     return (
       <main
@@ -729,17 +824,333 @@ function App() {
               </p>
             </>
           ) : (
-            <section style={{ ...panelStyle, marginTop: 35 }}>
-              <div className="eyebrow">{user.role.toUpperCase()} WORKSPACE</div>
-              <h1>Welcome, {user.full_name}.</h1>
-              <p style={{ color: "#9ca3af", lineHeight: 1.7 }}>
-                Your account is authenticated. The dedicated {user.role} dashboard
-                will be implemented in a later milestone.
-              </p>
-              <div style={{ color: "#9ca3af", fontSize: 13 }}>
-                Account: {user.email}
+            <>
+              <section
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 18,
+                  margin: "20px 0 26px",
+                }}
+              >
+                <div>
+                  <div className="eyebrow">
+                    {user.role === "admin" ? "ADMIN WORKSPACE" : "ANALYST WORKSPACE"}
+                  </div>
+                  <h1 style={{ fontSize: "clamp(28px, 4vw, 40px)", margin: "12px 0" }}>
+                    Incident response queue
+                  </h1>
+                  <p style={{ color: "#9ca3af", margin: 0, lineHeight: 1.6 }}>
+                    Review client reports, take ownership, and track each investigation.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => void loadIncidents()}
+                  disabled={incidentsLoading}
+                >
+                  {incidentsLoading ? "Refreshing…" : "↻ Refresh queue"}
+                </button>
+              </section>
+
+              {successMessage && (
+                <div
+                  role="status"
+                  style={{
+                    ...panelStyle,
+                    borderColor: "#166534",
+                    color: "#86efac",
+                    marginBottom: 20,
+                  }}
+                >
+                  ✓ {successMessage}
+                </div>
+              )}
+
+              {incidentError && (
+                <div
+                  role="alert"
+                  style={{
+                    ...panelStyle,
+                    borderColor: "#991b1b",
+                    color: "#fca5a5",
+                    marginBottom: 20,
+                  }}
+                >
+                  {incidentError}
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                  gap: 15,
+                  marginBottom: 22,
+                }}
+              >
+                {[
+                  { label: "All incidents", value: incidents.length, icon: "▤" },
+                  { label: "Unassigned", value: unassignedCount, icon: "◷" },
+                  { label: "In progress", value: inProgressCount, icon: "↗" },
+                  { label: "Resolved / closed", value: resolvedCount, icon: "✓" },
+                ].map((metric) => (
+                  <section key={metric.label} style={panelStyle}>
+                    <div style={{ color: "#60a5fa", fontSize: 23, marginBottom: 12 }}>
+                      {metric.icon}
+                    </div>
+                    <div style={{ color: "#9ca3af", fontSize: 13 }}>{metric.label}</div>
+                    <div style={{ fontSize: 29, fontWeight: 750, marginTop: 7 }}>
+                      {incidentsLoading && incidents.length === 0 ? "…" : metric.value}
+                    </div>
+                  </section>
+                ))}
               </div>
-            </section>
+
+              <section style={{ ...panelStyle, marginBottom: 22 }}>
+                <h2 style={{ margin: "0 0 15px" }}>Find incidents</h2>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                    gap: 14,
+                  }}
+                >
+                  <label style={{ display: "block", color: "#cbd5e1", fontSize: 13 }}>
+                    Search
+                    <input
+                      style={fieldStyle}
+                      value={analystSearch}
+                      onChange={(event) => setAnalystSearch(event.target.value)}
+                      placeholder="Title, description, ID, reporter…"
+                    />
+                  </label>
+                  <label style={{ display: "block", color: "#cbd5e1", fontSize: 13 }}>
+                    Status
+                    <select
+                      style={fieldStyle}
+                      value={analystStatusFilter}
+                      onChange={(event) => setAnalystStatusFilter(event.target.value)}
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="submitted">Submitted</option>
+                      <option value="assigned">Assigned</option>
+                      <option value="investigating">Investigating</option>
+                      <option value="escalated">Escalated</option>
+                      <option value="waiting">Waiting</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "block", color: "#cbd5e1", fontSize: 13 }}>
+                    Priority
+                    <select
+                      style={fieldStyle}
+                      value={analystPriorityFilter}
+                      onChange={(event) => setAnalystPriorityFilter(event.target.value)}
+                    >
+                      <option value="all">All priorities</option>
+                      <option value="p1">P1 · Critical</option>
+                      <option value="p2">P2 · High</option>
+                      <option value="p3">P3 · Medium</option>
+                      <option value="p4">P4 · Low</option>
+                    </select>
+                  </label>
+                </div>
+                <p style={{ color: "#64748b", fontSize: 12, margin: "13px 0 0" }}>
+                  Showing {filteredAnalystIncidents.length} of {incidents.length} incidents. Filters run on the currently loaded queue.
+                </p>
+              </section>
+
+              <section style={panelStyle}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                    flexWrap: "wrap",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div>
+                    <h2 style={{ margin: "0 0 6px" }}>All reported incidents</h2>
+                    <p style={{ color: "#9ca3af", margin: 0, fontSize: 13 }}>
+                      Live records from the ThreatLens API
+                    </p>
+                  </div>
+                </div>
+
+                {incidentsLoading && incidents.length === 0 ? (
+                  <p style={{ color: "#9ca3af" }}>Loading incident queue…</p>
+                ) : filteredAnalystIncidents.length === 0 ? (
+                  <div style={{ padding: "32px 12px", textAlign: "center", color: "#9ca3af" }}>
+                    <div style={{ fontSize: 30, marginBottom: 10 }}>◇</div>
+                    <strong style={{ color: "#e5e7eb" }}>No matching incidents</strong>
+                    <p style={{ marginBottom: 0 }}>Try changing the search or filters.</p>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        minWidth: 960,
+                        borderCollapse: "collapse",
+                        textAlign: "left",
+                        fontSize: 13,
+                      }}
+                    >
+                      <thead>
+                        <tr style={{ color: "#9ca3af" }}>
+                          {["Incident details", "Reporter / type", "Priority", "Status", "Assignment / actions"].map((heading) => (
+                            <th
+                              key={heading}
+                              style={{
+                                padding: "13px 12px",
+                                borderBottom: "1px solid #273449",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {heading}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAnalystIncidents.map((incident) => {
+                          const isUpdating = updatingIncidentId === incident.id;
+                          const isAssignedToMe = incident.assigned_analyst_id === user.id;
+                          const typeLabel =
+                            incidentTypes.find((item) => item.value === incident.incident_type)?.label ??
+                            incident.incident_type.replaceAll("_", " ");
+
+                          return (
+                            <tr key={incident.id}>
+                              <td
+                                style={{
+                                  padding: "17px 12px",
+                                  borderBottom: "1px solid #202b3c",
+                                  verticalAlign: "top",
+                                  minWidth: 250,
+                                  maxWidth: 370,
+                                }}
+                              >
+                                <strong style={{ color: "#f3f4f6", display: "block", marginBottom: 7 }}>
+                                  #{incident.id} · {incident.title}
+                                </strong>
+                                <div style={{ color: "#9ca3af", lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                                  {incident.description}
+                                </div>
+                                {incident.evidence_reference && (
+                                  <div style={{ marginTop: 9, overflowWrap: "anywhere" }}>
+                                    <span style={{ color: "#64748b" }}>Evidence: </span>
+                                    <a
+                                      href={incident.evidence_reference}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{ color: "#93c5fd" }}
+                                    >
+                                      {incident.evidence_reference}
+                                    </a>
+                                  </div>
+                                )}
+                                <div style={{ color: "#64748b", fontSize: 11, marginTop: 9 }}>
+                                  Created {new Date(incident.created_at).toLocaleString()} · Updated {new Date(incident.updated_at).toLocaleString()}
+                                </div>
+                              </td>
+                              <td style={{ padding: "17px 12px", borderBottom: "1px solid #202b3c", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                                <div>Client #{incident.reporter_id}</div>
+                                <div style={{ color: "#9ca3af", marginTop: 6 }}>{typeLabel}</div>
+                                <div style={{ color: "#64748b", fontSize: 11, marginTop: 6 }}>
+                                  Category: {incident.threat_category.replaceAll("_", " ")}
+                                </div>
+                              </td>
+                              <td style={{ padding: "17px 12px", borderBottom: "1px solid #202b3c", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                                <span
+                                  style={{
+                                    color: incident.priority === "p1" ? "#fca5a5" : incident.priority === "p2" ? "#fdba74" : incident.priority === "p3" ? "#fcd34d" : "#86efac",
+                                    fontWeight: 750,
+                                  }}
+                                >
+                                  {incident.priority.toUpperCase()}
+                                </span>
+                              </td>
+                              <td style={{ padding: "13px 12px", borderBottom: "1px solid #202b3c", verticalAlign: "top", minWidth: 150 }}>
+                                <select
+                                  style={{ ...fieldStyle, marginTop: 0, minWidth: 145, padding: "9px 10px" }}
+                                  value={incident.status}
+                                  disabled={isUpdating}
+                                  aria-label={`Status for incident ${incident.id}`}
+                                  onChange={(event) => {
+                                    const nextStatus = event.target.value as NonNullable<IncidentUpdatePayload["status"]>;
+                                    if (
+                                      nextStatus === "assigned" &&
+                                      incident.assigned_analyst_id === null &&
+                                      user.role === "analyst"
+                                    ) {
+                                      void updateIncident(incident.id, {
+                                        status: nextStatus,
+                                        assigned_analyst_id: user.id,
+                                      });
+                                    } else {
+                                      void updateIncident(incident.id, { status: nextStatus });
+                                    }
+                                  }}
+                                >
+                                  <option value="submitted">Submitted</option>
+                                  <option value="assigned">Assigned</option>
+                                  <option value="investigating">Investigating</option>
+                                  <option value="escalated">Escalated</option>
+                                  <option value="waiting">Waiting</option>
+                                  <option value="resolved">Resolved</option>
+                                  <option value="closed">Closed</option>
+                                </select>
+                                {isUpdating && <div style={{ color: "#93c5fd", fontSize: 11, marginTop: 6 }}>Saving…</div>}
+                              </td>
+                              <td style={{ padding: "13px 12px", borderBottom: "1px solid #202b3c", verticalAlign: "top", minWidth: 180 }}>
+                                {incident.assigned_analyst_id === null ? (
+                                  <div style={{ color: "#fbbf24", marginBottom: 10 }}>Unassigned</div>
+                                ) : (
+                                  <div style={{ color: isAssignedToMe ? "#86efac" : "#cbd5e1", marginBottom: 10 }}>
+                                    Analyst #{incident.assigned_analyst_id}{isAssignedToMe ? " · You" : ""}
+                                  </div>
+                                )}
+                                {user.role === "analyst" && !isAssignedToMe && (
+                                  <button
+                                    type="button"
+                                    disabled={isUpdating}
+                                    onClick={() => void updateIncident(incident.id, { assigned_analyst_id: user.id })}
+                                    style={{
+                                      ...buttonStyle,
+                                      background: "#1d4ed8",
+                                      opacity: isUpdating ? 0.65 : 1,
+                                      cursor: isUpdating ? "wait" : "pointer",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {isUpdating ? "Saving…" : incident.assigned_analyst_id === null ? "Assign to me" : "Reassign to me"}
+                                  </button>
+                                )}
+                                {user.role === "analyst" && isAssignedToMe && (
+                                  <span style={{ color: "#86efac", fontSize: 12 }}>✓ Assigned to you</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <p style={{ color: "#64748b", fontSize: 12, marginTop: 18, lineHeight: 1.6 }}>
+                Analyst actions are saved through the API. Priority and threat category are still backend defaults; AI classification and evidence file uploads are not implemented yet.
+              </p>
+            </>
           )}
 
           <footer
