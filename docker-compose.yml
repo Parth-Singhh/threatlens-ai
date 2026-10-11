@@ -23,8 +23,10 @@ services:
     restart: unless-stopped
     environment:
       APP_NAME: ThreatLens AI API
-      APP_VERSION: 0.1.0
+      APP_VERSION: 0.2.0
       DATABASE_URL: postgresql+psycopg://threatlens:threatlens@db:5432/threatlens
+      SECRET_KEY: ${SECRET_KEY:-local-development-only-change-this-secret-key}
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
     ports:
       - "8000:8000"
     depends_on:
