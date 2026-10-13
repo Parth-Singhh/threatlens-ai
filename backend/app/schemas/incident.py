@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from typing import Literal
 
@@ -29,6 +28,8 @@ IncidentStatus = Literal[
 
 class IncidentCreate(BaseModel):
     incident_type: IncidentType
+    # Backward-compatible default for API clients that do not yet send priority.
+    priority: IncidentPriority = "p3"
     title: str = Field(min_length=3, max_length=160)
     description: str = Field(min_length=10, max_length=5000)
     evidence_reference: str | None = Field(default=None, max_length=1000)
@@ -40,6 +41,7 @@ class IncidentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: IncidentStatus | None = None
+    priority: IncidentPriority | None = None
     assigned_analyst_id: int | None = Field(default=None, ge=1)
 
 

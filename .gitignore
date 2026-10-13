@@ -222,3 +222,10 @@ __marimo__/
 backend/models/*.joblib
 backend/models/*metrics.json
 !backend/models/.gitkeep
+# Node.js and Vite local artifacts
+node_modules/
+frontend/.vite/
+
+# Local environment overrides and secrets
+.env.*
+!.env.example

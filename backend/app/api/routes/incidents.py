@@ -1,4 +1,3 @@
-
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -33,7 +32,7 @@ def create_incident(
     db: DatabaseSession,
     current_user: ClientUser,
 ) -> IncidentResponse:
-    """Create an incident for the authenticated client."""
+    """Create an incident using the client's requested initial priority."""
     incident = Incident(
         reporter_id=current_user.id,
         incident_type=payload.incident_type,
@@ -45,6 +44,7 @@ def create_incident(
             and payload.evidence_reference.strip()
             else None
         ),
+        priority=payload.priority,
     )
 
     db.add(incident)
@@ -121,7 +121,7 @@ def update_incident(
     db: DatabaseSession,
     current_user: AnalystUser,
 ) -> IncidentResponse:
-    """Allow analysts/admins to assign and update incidents."""
+    """Allow analysts/admins to assign, reprioritize, and update incidents."""
     incident = db.get(Incident, incident_id)
 
     if incident is None:
@@ -135,13 +135,19 @@ def update_incident(
     if not updates:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Provide a status or assignee to update.",
+            detail="Provide a priority, status, or assignee to update.",
         )
 
     if "status" in updates and updates["status"] is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Status cannot be null.",
+        )
+
+    if "priority" in updates and updates["priority"] is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Priority cannot be null.",
         )
 
     target_assignee_id = updates.get(
@@ -168,6 +174,9 @@ def update_incident(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Assign an analyst before using the assigned status.",
         )
+
+    if "priority" in updates:
+        incident.priority = updates["priority"]
 
     if "assigned_analyst_id" in updates:
         incident.assigned_analyst_id = target_assignee_id

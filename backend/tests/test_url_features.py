@@ -18,8 +18,10 @@ def test_features_are_stable_and_finite() -> None:
 def test_feature_flags_detect_simple_url_characteristics() -> None:
     features = dict(zip(URL_FEATURE_NAMES, extract_url_features("http://192.0.2.4/login?token=123")))
     assert features["host_is_ip"] == 1.0
-    assert features["is_http"] == 1.0
     assert features["suspicious_term_count"] >= 1.0
+    assert "is_http" not in features
+    assert "is_https" not in features
+    assert "has_www_prefix" not in features
 
 
 @pytest.mark.parametrize("value", ["", "   ", "https:///path", "bad url .com"])

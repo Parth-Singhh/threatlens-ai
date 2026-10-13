@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: threatlens
       POSTGRES_USER: threatlens
-      POSTGRES_PASSWORD: threatlens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
@@ -23,12 +23,18 @@ services:
     restart: unless-stopped
     environment:
       APP_NAME: ThreatLens AI API
-      APP_VERSION: 0.2.0
-      DATABASE_URL: postgresql+psycopg://threatlens:threatlens@db:5432/threatlens
-      SECRET_KEY: ${SECRET_KEY:-local-development-only-change-this-secret-key}
+      APP_VERSION: 0.3.0
+      DATABASE_URL: postgresql+psycopg://threatlens:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/threatlens
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      # Local college-demo mode: explicitly uses an experimental candidate with triage warnings.
+      # Set THREATLENS_URL_MODEL_MODE=production only after a model passes project promotion gates.
+      THREATLENS_URL_MODEL_MODE: ${THREATLENS_URL_MODEL_MODE:-experimental-v4}
+      THREATLENS_URL_LOW_SCORE_THRESHOLD: ${THREATLENS_URL_LOW_SCORE_THRESHOLD:-0.20}
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/models:/app/models
     depends_on:
       db:
         condition: service_healthy

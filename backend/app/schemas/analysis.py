@@ -1,4 +1,5 @@
 from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.url_features import normalize_url
@@ -15,10 +16,13 @@ class URLAnalysisRequest(BaseModel):
 
 class URLAnalysisResponse(BaseModel):
     url: str
-    prediction: Literal["phishing", "legitimate"]
+    prediction: Literal["phishing", "low_signal", "uncertain"]
     phishing_probability: float = Field(ge=0.0, le=1.0)
     confidence: float = Field(ge=0.0, le=1.0)
     risk_level: Literal["high", "medium", "low", "uncertain"]
     model_name: str
+    model_mode: Literal["experimental-demo", "production"]
+    decision_threshold: float = Field(gt=0.0, le=1.0)
+    low_score_threshold: float = Field(ge=0.0, lt=1.0)
     signals: list[str]
     explanation_note: str

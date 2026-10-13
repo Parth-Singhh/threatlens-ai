@@ -6,8 +6,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY ml ./ml
 COPY tests ./tests
 COPY pytest.ini .
+RUN mkdir -p /app/models
 
 EXPOSE 8000
 
