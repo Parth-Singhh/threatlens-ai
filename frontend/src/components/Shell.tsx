@@ -64,7 +64,7 @@ export function Shell({
   }, [open]);
 
   return (
-    <div className="app">
+    <div className="app light-theme">
       <div className={open ? "scrim show" : "scrim"} onClick={() => setOpen(false)} />
       <aside className={open ? "sidebar open" : "sidebar"} aria-label="Primary">
         <a className="brand" href="/" aria-label="ThreatLens AI home">

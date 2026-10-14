@@ -6,15 +6,15 @@ export function LensMark({ size = 34 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 40 40" className="lens-mark" aria-hidden="true">
       <defs>
         <linearGradient id={`lg${id}`} x1="0" y1="0" x2="40" y2="40">
-          <stop offset="0" stopColor="#5df0ff" />
-          <stop offset="1" stopColor="#7a5cff" />
+          <stop offset="0" stopColor="#ffd84d" />
+          <stop offset="1" stopColor="#f4b400" />
         </linearGradient>
       </defs>
       <rect x="1" y="1" width="38" height="38" rx="11" fill="#07101c" stroke={`url(#lg${id})`} strokeWidth="1.4" />
       <circle cx="20" cy="20" r="10.5" fill="none" stroke={`url(#lg${id})`} strokeWidth="2" />
-      <circle cx="20" cy="20" r="5" fill="none" stroke="#5df0ff" strokeOpacity=".55" strokeWidth="1.2" />
-      <path d="M20 4v6M20 30v6M4 20h6M30 20h6" stroke="#5df0ff" strokeWidth="1.6" strokeLinecap="round" />
-      <circle cx="20" cy="20" r="2.2" fill="#5df0ff" />
+      <circle cx="20" cy="20" r="5" fill="none" stroke="#ffd84d" strokeOpacity=".55" strokeWidth="1.2" />
+      <path d="M20 4v6M20 30v6M4 20h6M30 20h6" stroke="#ffd84d" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="20" cy="20" r="2.2" fill="#ffd84d" />
     </svg>
   );
 }
