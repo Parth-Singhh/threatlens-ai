@@ -1,701 +1,362 @@
 # ThreatLens AI
 
-## AI-Powered Unified Cybersecurity Incident Management Platform
+**AI-assisted cybersecurity incident management with experimental phishing-URL triage.**
 
-ThreatLens AI is an AI-powered cybersecurity incident management platform designed to combine multimodal threat analysis with human-in-the-loop incident management.
+ThreatLens AI is an academic project that brings incident reporting, analyst triage, and URL-structure analysis into one web application. Clients can submit incidents and choose an initial priority. Analysts can review the queue, assign incidents, update status and reprioritize cases. An integrated machine-learning service analyzes URL strings and provides an advisory phishing-triage result. Human review remains essential.
 
-The platform is designed to allow clients to report security incidents, use AI to analyze and prioritize those incidents, and enable security analysts to investigate, manage, escalate, resolve, and close them through a unified workflow.
+> **Project status: working academic/demo application.** The incident-management application and the URL MLP inference integration are implemented. The URL model is explicitly experimental and is not validated for live operational decisions. Multimodal email/text/image models, automatic AI priority assignment, and several enterprise SOC features are future work—not current capabilities.
 
----
+## Contents
 
-## Project Status
+- [Implemented features](#implemented-features)
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Project layout](#project-layout)
+- [Requirements](#requirements)
+- [Run locally with Docker Compose](#run-locally-with-docker-compose)
+- [URL model artifacts](#url-model-artifacts)
+- [Application workflows](#application-workflows)
+- [API overview](#api-overview)
+- [Testing](#testing)
+- [How the URL model works](#how-the-url-model-works)
+- [Limitations and security notes](#limitations-and-security-notes)
+- [Roadmap](#roadmap)
+- [License](#license)
 
-🚧 **Early Development**
+## Implemented features
 
-ThreatLens AI is currently in the initial development stage.
+### Client workspace
 
-The current milestone focuses on establishing the core application architecture and development foundation. Features will be implemented incrementally throughout the project.
+- Register a client account and sign in.
+- Submit a security incident with type, title, description, optional evidence reference, and manually selected initial priority.
+- View the client's own incidents and see status/priority updates.
+- Use the URL Analyzer and prefill a suspicious-URL incident report from its output.
 
-AI models and performance metrics will only be reported after actual training and evaluation.
+### Analyst workspace
 
----
+- View the incident Command Center and Incident Queue.
+- Filter and sort incident records and use queue scope controls.
+- Assign incidents, update their status, and revise priority.
+- Review priority levels P1–P4 and investigation status labels.
+- View incident-derived charts and queue indicators. The queue-pressure gauge is a weighted score calculated from the currently loaded incidents; it is not an independent threat metric.
 
-## Problem Statement
+### URL analysis
 
-Modern organizations receive security incidents from multiple sources, including suspicious emails, URLs, messages, files, screenshots, and other security events.
+- Validate and normalize an HTTP(S) URL string.
+- Extract 28 lexical and structural features from the URL.
+- Run a trained Scikit-learn MLP pipeline and return a raw phishing score, triage label, thresholds, contextual signals, and explanatory warning.
+- Use three triage states: `low_signal`, `uncertain`, and `phishing`.
+- Display explicit warnings that the model is experimental and its output requires human review.
 
-Security teams can face:
+### Platform foundation
 
-- Large volumes of security alerts
-- Alert fatigue
-- Manual investigation processes
-- Slow incident response
-- Inconsistent incident prioritization
-- Fragmented security workflows
-- Difficulty connecting threat detection with incident response
+- React + TypeScript frontend with responsive client and analyst views.
+- FastAPI backend with Pydantic validation and role checks.
+- PostgreSQL database accessed through SQLAlchemy.
+- Password hashing and JWT-based authenticated API requests.
+- Docker Compose development environment with persistent PostgreSQL volume.
+- Automated backend tests.
 
-ThreatLens AI aims to address these problems by bringing AI-assisted threat analysis and incident management into a single platform.
+## Architecture
 
----
+```mermaid
+flowchart TD
+    Browser[React + TypeScript + Vite\nClient and analyst UI] -->|HTTP /api requests| API[FastAPI backend]
+    API --> Auth[Authentication and role checks]
+    API --> Incidents[Incident management routes]
+    API --> URL[URL-analysis route]
+    Incidents --> ORM[SQLAlchemy]
+    ORM --> DB[(PostgreSQL)]
+    URL --> Normalize[URL validation and normalization]
+    Normalize --> Features[28 URL lexical/structural features]
+    Features --> Pipeline[StandardScaler + MLPClassifier]
+    Pipeline --> Triage[Raw score + three-state triage]
+    Triage --> Browser
+```
 
-## Objective
+Docker Compose runs three services:
 
-The objective of ThreatLens AI is to develop a unified cybersecurity platform that connects:
+| Service | Purpose | Local address |
+|---|---|---|
+| `threatlens-web` | Vite frontend development server | <http://localhost:5173> |
+| `threatlens-api` | FastAPI API and interactive Swagger documentation | <http://localhost:8000> / <http://localhost:8000/docs> |
+| `threatlens-db` | PostgreSQL database | `localhost:5432` |
 
-- Security incident reporting
-- AI-powered threat analysis
-- Threat classification
-- Incident prioritization
-- Security analyst investigation
-- Incident escalation
-- Incident resolution
-- Security analytics
+The Vite development server proxies `/api` requests to the backend service. PostgreSQL data is stored in the named Docker volume `threatlens-postgres-data`.
 
-The platform follows a human-in-the-loop approach where AI assists security analysts while humans retain control over important security decisions.
+## Technology stack
 
----
+| Area | Technology |
+|---|---|
+| Frontend | React, TypeScript, Vite, CSS, hand-built SVG charts |
+| Backend | Python, FastAPI, Pydantic, SQLAlchemy |
+| Authentication | Password hashing with `pwdlib`; signed JWT access tokens with PyJWT |
+| Database | PostgreSQL, `psycopg` driver |
+| Machine learning | Scikit-learn `MLPClassifier`, `StandardScaler`, NumPy, Pandas, joblib |
+| Dataset/training utilities | UCI ML Repository client, public Hugging Face dataset files, PyArrow, `tldextract` |
+| Local development | Docker, Docker Compose, Git, GitHub |
 
-## Core Workflow
+## Project layout
 
-Client submits security incident  
-↓  
-AI Analysis  
-↓  
-Threat Classification  
-↓  
-Priority Prediction  
-↓  
-Confidence Score  
-↓  
-Recommended Actions  
-↓  
-Incident Created  
-↓  
-Analyst Investigation  
-↓  
-Accept / Modify / Reject AI Recommendation  
-↓  
-Escalation if required  
-↓  
-Resolve  
-↓  
-Close
+```text
+threatlens-ai/
+├── backend/
+│   ├── app/
+│   │   ├── api/routes/       # Auth, incident and URL-analysis endpoints
+│   │   ├── models/           # SQLAlchemy User and Incident models
+│   │   ├── schemas/          # Pydantic request/response schemas
+│   │   ├── services/         # URL features and model inference
+│   │   ├── config.py         # Application settings
+│   │   ├── database.py       # SQLAlchemy engine/session
+│   │   └── security.py       # Password hashing and JWT handling
+│   ├── ml/                   # Training, evaluation and candidate-check scripts
+│   ├── models/               # Local model binaries/metrics (not committed)
+│   ├── tests/                # Backend tests
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/       # Auth, shell, client/analyst views, charts, panels
+│   │   ├── App.tsx           # Application state and API handlers
+│   │   ├── lib.ts            # Shared UI helpers
+│   │   ├── types.ts          # Shared frontend types
+│   │   └── index.css         # Design system and responsive styling
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── vite.config.ts
+│   └── Dockerfile
+├── docs/                     # Model-audit notes
+├── docker-compose.yml
+├── .env.example              # Safe configuration template
+├── .gitignore
+├── LICENSE
+└── README.md
+```
 
----
+## Requirements
 
-## AI Architecture
+- Docker Desktop with Docker Compose support.
+- Git, if cloning the repository.
+- Internet access for pulling container images and, if needed, downloading the training datasets.
+- Compatible local URL-model artifacts if you want URL inference immediately; see [URL model artifacts](#url-model-artifacts).
 
-ThreatLens AI is designed as a multimodal AI system.
+## Run locally with Docker Compose
 
-Different types of security information can be processed using different neural network architectures.
+### 1. Clone the repository
 
-**Security Incident**
+```powershell
+git clone https://github.com/Parth-Singhh/threatlens-ai.git
+cd threatlens-ai
+```
 
-→ **Text** → **LSTM**
+### 2. Create your local environment file
 
-→ **Image** → **CNN**
+```powershell
+Copy-Item .env.example .env
+```
 
-→ **Structured Data** → **MLP**
+Open `.env` and replace the placeholder values with your own. Use a strong, random value for both `POSTGRES_PASSWORD` and `SECRET_KEY`. Do not commit `.env`.
 
-These model outputs will eventually be combined through a feature-fusion layer.
+Example variable names (use private values locally; do not copy example placeholders as production secrets):
 
-The combined representation will be used for:
+```dotenv
+POSTGRES_PASSWORD=replace-with-a-strong-random-password
+SECRET_KEY=replace-with-a-long-random-signing-key
+THREATLENS_URL_MODEL_MODE=experimental-v4
+THREATLENS_URL_LOW_SCORE_THRESHOLD=0.20
+```
 
-- Threat Category
-- Priority
-- Confidence
-- Recommended Actions
+**Important:** Compose uses `POSTGRES_PASSWORD` when the PostgreSQL data directory is initialized for the first time. If reusing an already initialized database volume, changing the variable alone does not change the database user's existing password. Do not remove the volume to resolve a password issue unless you intentionally want to delete local database data.
 
-### MLP
+### 3. Start the application
 
-The Multi-Layer Perceptron is planned for structured security features and classification tasks such as:
+```powershell
+docker compose up --build -d
+```
 
-- Incident metadata
-- Threat characteristics
-- Structured security indicators
-- Priority prediction
+Check service status:
 
-### LSTM
+```powershell
+docker compose ps
+```
 
-The Long Short-Term Memory network is planned for sequential and text-based information such as:
+Open:
 
-- Suspicious emails
-- Security messages
-- Incident descriptions
-- Other textual evidence
+- Frontend: <http://localhost:5173>
+- API health: <http://localhost:8000/api/health>
+- Swagger UI: <http://localhost:8000/docs>
 
-### CNN
+Stop the services without deleting database data:
 
-The Convolutional Neural Network is planned for visual and spatial security information such as:
+```powershell
+docker compose down
+```
 
-- Suspicious screenshots
-- Fake login pages
-- Malicious webpage screenshots
-- Other visual security evidence
+Avoid `docker compose down -v` unless you intentionally want to delete the named PostgreSQL volume and the data stored in it.
 
-> These models are part of the planned architecture and will be trained and evaluated during later development stages.
+### 4. Frontend-only development/build
 
----
+From the repository root:
 
-## Threat Categories
+```powershell
+cd frontend
+npm ci
+npm run build
+```
 
-The initial system is planned to support categories such as:
+`npm run build` runs the TypeScript project build (`tsc -b`) and Vite production bundling. Return to the repository root before running Docker Compose commands.
 
-- Phishing
-- Credential Theft
-- Malware
-- Business Email Compromise
-- Spam
-- Benign
-- Other Suspicious Activity
+## URL model artifacts
 
-The final categories may be refined during dataset creation and model development.
+Model binaries and metrics are deliberately excluded from Git by `.gitignore`. Therefore, cloning the source repository does **not** by itself provide all files needed to run URL inference.
 
----
+In the default `experimental-v4` mode, the API expects these files under `backend/models/`:
 
-## Incident Priority
+```text
+backend/models/
+├── url_mlp_v4_candidate.joblib
+└── url_mlp_v4_candidate_metrics.json
+```
 
-ThreatLens AI is planned to use a four-level incident priority system:
+If these compatible artifacts are absent, the application and incident-management workflows can still start, but `/api/analysis/url` returns a service-unavailable response until a compatible model and metrics file are supplied.
 
-| Priority | Severity |
-|----------|----------|
+To train a new v4 candidate from the training sources configured in the repository, start the backend container and run:
+
+```powershell
+docker exec -it threatlens-api python ml/train_url_model_mixed.py
+```
+
+Run the candidate's compatibility and regression checks:
+
+```powershell
+docker exec -it threatlens-api python ml/check_url_model_v4_candidate.py
+```
+
+These steps require network access to the configured public dataset sources and may take time. Training writes a **candidate** artifact; it does not by itself establish production readiness. Review the generated metrics and the independent-evaluation requirement before using any model operationally. The backend mounts `./backend/models` into the container, so generated artifacts are available on the host and persist across container rebuilds.
+
+The current local demo configuration explicitly selects `experimental-v4`. Production mode expects separately prepared `url_mlp.joblib` and `url_mlp_metrics.json` artifacts with valid promotion/validation metadata. Do not switch to production mode merely to suppress the experimental warning.
+
+## Application workflows
+
+### Client workflow
+
+1. Register a client account or sign in.
+2. Open the incident-report drawer and select an incident type.
+3. Enter a title and description, optionally provide an evidence reference, and choose initial priority P1, P2, P3, or P4.
+4. Submit the report. The backend validates it and stores the incident in PostgreSQL.
+5. View the incident and track the status and priority updates made by staff.
+6. Optionally analyze a URL and use its result to prefill a suspicious-URL report.
+
+### Analyst workflow
+
+1. Sign in with an analyst account provisioned in the development environment.
+2. Review the Command Center and Incident Queue.
+3. Use queue filters/sorting and open incident details.
+4. Assign an analyst and update incident status or priority.
+5. Changes are sent through the protected API and saved to the database.
+
+Registration currently creates **client** accounts only. There is no complete administrator user-management interface in the current frontend; analyst/admin accounts must be provisioned separately for a development/demo environment.
+
+### Priority and status values
+
+| Priority | Meaning |
+|---|---|
 | P1 | Critical |
 | P2 | High |
-| P3 | Medium |
+| P3 | Medium (API default if a client omits priority) |
 | P4 | Low |
 
-AI-generated priority recommendations will be reviewed by security analysts.
+Supported incident statuses are `submitted`, `assigned`, `investigating`, `escalated`, `waiting`, `resolved`, and `closed`. The backend verifies that an assigned user is an active analyst. Assigning an analyst to a newly submitted case can move its status to `assigned`.
 
----
+The client and analyst use the same stored `priority` field: when an analyst changes priority, the earlier client-selected value is overwritten. Separate priority history/audit tracking is not implemented yet.
 
-## User Roles
+## API overview
 
-### Client
+All paths below are served by the FastAPI backend. Protected routes require a valid bearer token, except registration, login, and health checks.
 
-Clients will be able to:
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/` | API name, version, status |
+| `GET` | `/api/health` | API/database health status |
+| `POST` | `/api/auth/register` | Register a client account |
+| `POST` | `/api/auth/login` | Verify credentials and return a JWT access token |
+| `GET` | `/api/auth/me` | Return current authenticated user |
+| `POST` | `/api/incidents` | Create an incident as a client |
+| `GET` | `/api/incidents` | List incidents; clients see their own, staff see the queue |
+| `GET` | `/api/incidents/{incident_id}` | Fetch one incident, with client ownership checks |
+| `PATCH` | `/api/incidents/{incident_id}` | Authorized staff update status, assignment, and/or priority |
+| `POST` | `/api/analysis/url` | Authenticated URL analysis using the configured model |
 
-- Register and log in
-- Submit security incidents
-- Provide incident evidence
-- View AI analysis
-- View threat category
-- View incident priority
-- Track incident status
-- View incident history
-- Receive notifications
-- Access reports
+Full schemas and interactive requests/responses are available at <http://localhost:8000/docs> while the backend is running.
 
-### Security Analyst
+## Testing
 
-Security analysts will be able to:
+Run the backend test suite in the running backend container:
 
-- View assigned incidents
-- Review AI analysis
-- Investigate incidents
-- Review evidence
-- Add investigation notes
-- Accept AI recommendations
-- Modify AI recommendations
-- Reject AI recommendations
-- Change incident priority
-- Escalate incidents
-- Resolve incidents
-- Close incidents
+```powershell
+docker exec -it threatlens-api pytest -q
+```
 
-### Administrator
+Run the frontend TypeScript and production build checks:
 
-Administrators will be able to:
+```powershell
+cd frontend
+npm ci
+npm run build
+```
 
-- Manage users
-- Manage security analysts
-- View organization-wide incidents
-- Assign incidents
-- Review escalations
-- Monitor analyst workload
-- View security analytics
-- Monitor AI performance
-- Generate reports
-- Review audit logs
+Tests cover schema/validation, URL normalization/features, model triage decisions, and other backend behavior. Re-run the checks after code or dependency changes; passing tests are not a substitute for a full security review or live-system validation.
 
----
+## How the URL model works
 
-## Supported Incident Types
+1. **Input validation and normalization:** accepts HTTP(S) URLs (a missing scheme is normalized for compatibility), rejects unsupported schemes and malformed inputs, and canonicalizes certain formatting differences.
+2. **Feature extraction:** constructs 28 numeric lexical/structural features including URL/host/path/query lengths, hostname structure, character counts/ratios, IP/port/punycode indicators, suspicious-term count, shortener indicator, path depth, query count, and host-character entropy.
+3. **Scaling:** a `StandardScaler` fitted during training transforms the feature vector.
+4. **Classification:** a Scikit-learn `MLPClassifier` with hidden layers `(64, 32)`, ReLU activation and Adam optimizer produces class scores.
+5. **Triage policy:** the raw score is compared with a low-score cutoff and a validation-selected high cutoff. With the current v4 demo, the low cutoff is `0.20` and the high cutoff comes from the candidate metrics metadata (approximately `0.82` in the evaluated run).
+6. **Response:** the API returns the normalized URL, raw phishing score, triage label, risk label, model mode/name, threshold values, contextual signals, and warning text.
 
-The platform is built around a central Security Incident entity.
+The mixed-source trainer uses UCI PhiUSIIL (dataset ID 967) and `flwrlabs/fed-phishing-urls`. It maps both sources into the internal convention `0 = legitimate/benign`, `1 = phishing`, excludes conflicting canonical-label groups, and uses Public Suffix List-aware registered-domain-separated train/validation/test splits to reduce domain leakage. Candidate training, evaluation metrics, and preliminary regression checks are implemented in `backend/ml/`.
 
-Initial incident types include:
+### Interpreting the output correctly
 
-- Suspicious Email
-- Suspicious URL
-- Suspicious Message
-- Suspicious File
-- Suspicious Screenshot
-- Other / Custom Security Incident
+- The field called `phishing_probability` is the model's raw class score; it is **not calibrated** to mean a real-world probability that the submitted URL is malicious.
+- `phishing` means the URL crossed the configured threshold and should be reviewed—not that maliciousness has been confirmed.
+- `low_signal` is not a guarantee of safety.
+- Intermediate scores are `uncertain` and require additional investigation.
+- The model inspects the URL string only. It does not visit the website, follow redirects, check current reputation, render the page, or inspect page content.
+- Public dataset labels may be stale/noisy. Contemporary independent evaluation is required before operational use.
 
-Different incident types can be routed to appropriate AI analysis pipelines.
+## Limitations and security notes
 
----
+ThreatLens AI is an academic/development demo, not a replacement for a SOC or professional security tools. In particular:
 
-## AI-Assisted Analysis
+- The URL MLP is experimental and not validated for live security decisions.
+- LSTM-based email/message analysis, CNN-based screenshot analysis, and multimodal feature fusion are planned, not implemented.
+- Incident priority is selected by the client and can be changed by an analyst; the URL model does not assign incident priority.
+- File uploads, automatic scanning of every submitted incident, notifications, complete administrator management, and a comprehensive audit/event log are not implemented as full features.
+- The initial schema is created with SQLAlchemy `create_all`; a formal database migration system should be added before production.
+- Use HTTPS, strong deployment-specific secrets, restricted network exposure, an explicit token/session security policy, logging/monitoring, backups, and a security review before any real-world deployment.
+- Never commit `.env`, credentials, dataset dumps, or model artifacts containing private data. `.env.example` is a template only.
 
-For each security incident, the AI system is intended to provide:
+## Roadmap
 
-- Threat category
-- Threat score
-- Priority recommendation
-- Confidence score
-- AI-generated summary
-- Recommended response actions
+Potential next milestones include:
 
-Example:
-
-**Threat Category:** Phishing
-
-**Priority:** P2 - High
-
-**Confidence:** 94%
-
-**Recommended Actions:**
-
-- Quarantine the email
-- Block the sender
-- Inspect the affected account
-- Notify the security team
-
-The final decision remains with the security analyst.
-
----
-
-## Human-in-the-Loop
-
-AI recommendations are not intended to automatically become final security decisions.
-
-The analyst can:
-
-- Accept the recommendation
-- Modify the recommendation
-- Reject the recommendation
-
-This approach allows the platform to track:
-
-- AI recommendation acceptance
-- Human overrides
-- AI-human agreement
-- Analyst decisions
-- Model performance
-
----
-
-## Planned Dashboards
-
-### Client Dashboard
-
-Planned metrics include:
-
-- Security Score
-- Total incidents
-- Threats detected
-- Critical incidents
-- Resolved incidents
-- Detection rate
-- Average response time
-- Average resolution time
-- False alarm rate
-- Incident resolution rate
-- Incident trends
-- Threat category distribution
-- Recent incidents
-
-### Analyst Dashboard
-
-Planned metrics include:
-
-- Assigned incidents
-- Open incidents
-- Critical incidents
-- Resolved incidents
-- Average resolution time
-- AI confidence
-- AI recommendation agreement
-- Pending investigations
-- Escalated incidents
-- Analyst workload
-
-### Administrator Dashboard
-
-Planned metrics include:
-
-- Total incidents
-- Open incidents
-- Critical incidents
-- Threat trends
-- Priority distribution
-- Threat category distribution
-- Average resolution time
-- Escalation rate
-- Analyst performance
-- AI classification performance
-- Precision
-- Recall
-- F1-score
-- AI-human agreement
-
----
-
-## Model Evaluation
-
-AI models will be evaluated using standard machine learning metrics including:
-
-- Accuracy
-- Precision
-- Recall
-- F1-score
-- Confusion Matrix
-
-Model performance values will only be added after actual training and testing.
-
----
-
-## System Architecture
-
-The planned application architecture consists of:
-
-**Frontend**
-
-React + TypeScript + Vite
-
-↓
-
-**Backend**
-
-FastAPI + Python
-
-↓
-
-**Database**
-
-PostgreSQL
-
-↓
-
-**AI Inference Pipeline**
-
-MLP + LSTM + CNN
-
-The backend will act as the main application layer connecting the frontend, database, authentication system, incident-management system, and AI inference services.
-
----
-
-## Technology Stack
-
-### Frontend
-
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- Recharts
-
-### Backend
-
-- Python
-- FastAPI
-- SQLAlchemy
-- JWT Authentication
-
-### Database
-
-- PostgreSQL
-
-### AI / Machine Learning
-
-- Python
-- TensorFlow / Keras
-- Scikit-learn
-- Pandas
-- NumPy
-- Matplotlib
-
-### Development & Deployment
-
-- Git
-- GitHub
-- Docker
-- Docker Compose
-
----
-
-## Project Structure
-
-The planned repository structure is:
-
-- `frontend/` — React frontend
-- `backend/` — FastAPI backend
-- `ai/` — AI and machine-learning components
-- `ai/datasets/` — Raw and processed datasets
-- `ai/preprocessing/` — Data preprocessing
-- `ai/models/` — MLP, LSTM and CNN models
-- `ai/training/` — Model training
-- `ai/evaluation/` — Model evaluation
-- `ai/inference/` — AI inference
-- `database/` — Database-related components
-- `tests/` — Automated tests
-- `docs/` — Architecture, API and research documentation
-- `.gitignore` — Git ignore configuration
-- `README.md` — Project documentation
-- `docker-compose.yml` — Container configuration
-- `LICENSE` — Project license
-
----
-
-## Incident Lifecycle
-
-The planned incident lifecycle is:
-
-**Submitted → Assigned → Investigating → Escalated → Resolved → Closed**
-
-Not every incident will require escalation.
-
-Each incident will maintain a record of important actions and status changes.
-
----
-
-## Incident Data Model
-
-A security incident is planned to contain information such as:
-
-- Incident ID
-- Client
-- Incident Type
-- Description
-- Evidence
-- Threat Category
-- Threat Score
-- AI Confidence
-- AI Priority
-- Analyst Priority
-- Recommended Actions
-- Status
-- Assigned Analyst
-- Investigation Notes
-- Timeline
-- Resolution
-- Created Timestamp
-- Updated Timestamp
-
----
-
-## Security Considerations
-
-Security is a core requirement of the platform.
-
-Planned security mechanisms include:
-
-- Role-Based Access Control (RBAC)
-- JWT authentication
-- Password hashing
-- Input validation
-- Protected API endpoints
-- Environment-based secrets
-- Audit logging
-- Controlled access to incident evidence
-- Secure database configuration
-
----
-
-## Testing Strategy
-
-The project will use controlled synthetic users and security scenarios for testing.
-
-The test environment will include simulated:
-
-- Client accounts
-- Analyst accounts
-- Administrator accounts
-- Security incidents
-- Threat scenarios
-- Benign scenarios
-
-Testing will cover:
-
-- Authentication
-- Authorization
-- Role-based access
-- Incident creation
-- Incident lifecycle
-- AI predictions
-- Analyst overrides
-- Escalation workflows
-- Dashboard calculations
-- API endpoints
-- Edge cases
-- Security controls
-
----
-
-## Academic Scope
-
-ThreatLens AI is being developed as a practical application of concepts from Artificial Intelligence and Neural Networks, including:
-
-- Multi-Layer Perceptrons
-- Activation Functions
-- Backpropagation
-- Optimization Methods
-- Regularization
-- Deep Learning
-- Convolutional Neural Networks
-- Recurrent Neural Networks
-- LSTM Networks
-- Model Evaluation
-
-The project applies these concepts to a real-world cybersecurity use case.
-
----
-
-## Research Component
-
-The project will include research related to:
-
-- Artificial Intelligence in Cybersecurity
-- Security Incident Management
-- Phishing Detection
-- Deep Learning for Cybersecurity
-- Multimodal Threat Analysis
-- Human-in-the-Loop Security Systems
-
-Research documentation will be maintained under:
-
-`docs/research/`
-
----
-
-## Development Roadmap
-
-### Phase 1 — Application Foundation
-
-- [ ] Repository setup
-- [ ] Project structure
-- [ ] React frontend
-- [ ] FastAPI backend
-- [ ] PostgreSQL setup
-- [ ] Docker configuration
-- [ ] Environment configuration
-- [ ] Backend health check
-
-### Phase 2 — Authentication & RBAC
-
-- [ ] User registration
-- [ ] Login
-- [ ] JWT authentication
-- [ ] Client role
-- [ ] Analyst role
-- [ ] Administrator role
-- [ ] Protected routes
-
-### Phase 3 — Incident Management
-
-- [ ] Incident database model
-- [ ] Incident submission
-- [ ] Evidence handling
-- [ ] Incident assignment
-- [ ] Incident status lifecycle
-- [ ] Investigation notes
-- [ ] Escalation
-- [ ] Resolution
-- [ ] Closure
-
-### Phase 4 — Dashboards
-
-- [ ] Client dashboard
-- [ ] Analyst dashboard
-- [ ] Administrator dashboard
-- [ ] Incident analytics
-- [ ] Security metrics
-- [ ] Charts and trends
-
-### Phase 5 — AI Dataset & Preprocessing
-
-- [ ] Dataset collection
-- [ ] Data cleaning
-- [ ] Feature engineering
-- [ ] Text preprocessing
-- [ ] Image preprocessing
-- [ ] Dataset splitting
-
-### Phase 6 — Neural Network Models
-
-- [ ] MLP
-- [ ] LSTM
-- [ ] CNN
-- [ ] Model training
-- [ ] Model evaluation
-- [ ] Model comparison
-- [ ] Model serialization
-
-### Phase 7 — AI Integration
-
-- [ ] AI inference API
-- [ ] Threat classification
-- [ ] Priority prediction
-- [ ] Confidence scoring
-- [ ] Feature fusion
-- [ ] Recommended actions
-- [ ] AI → Incident pipeline
-
-### Phase 8 — Analytics & Trust
-
-- [ ] AI-human agreement
-- [ ] Human override tracking
-- [ ] AI performance dashboard
-- [ ] Precision / Recall / F1
-- [ ] Incident reports
-- [ ] Audit logs
-
-### Phase 9 — Testing & Deployment
-
-- [ ] Unit testing
-- [ ] Integration testing
-- [ ] End-to-end testing
-- [ ] Security testing
-- [ ] Docker deployment
-- [ ] Documentation
-- [ ] Final demonstration
-
----
-
-## Current Development Milestone
-
-### THREATLENS-001 — Application Foundation
-
-The first milestone is to establish a clean and runnable foundation consisting of:
-
-**React Frontend → FastAPI Backend → PostgreSQL Database**
-
-After the foundation is complete, development will proceed to authentication and role-based access control.
-
----
-
-## Project Disclaimer
-
-ThreatLens AI is an academic and research-oriented project under active development.
-
-The system is not intended to replace professional cybersecurity teams, Security Operations Centers, or established security products.
-
-AI-generated classifications, priorities, and recommendations should be reviewed by qualified security personnel before being used for real-world security decisions.
-
----
-
-## Author
-
-**Parth Singh**
-
-B.Tech — Cyber Security  
-Amrita Vishwa Vidyapeetham
-
----
+- Improve the README/demo documentation as features change.
+- Add formal schema migrations and stronger integration/end-to-end tests.
+- Improve priority history and incident activity/audit records.
+- Conduct independent contemporary URL-model evaluation and revisit calibration/threshold policy.
+- Add file upload/evidence handling with access controls.
+- Explore separately evaluated email/text and screenshot models, then consider multimodal fusion only if the project scope and datasets support it.
+- Add deployment hardening, monitoring, backups, and automated build/test checks.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE) for details.
 
-See the `LICENSE` file for details.
+## Author
+
+**Parth Singh**  
+B.Tech — Cyber Security  
+Amrita Vishwa Vidyapeetham
