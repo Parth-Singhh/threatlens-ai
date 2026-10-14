@@ -56,7 +56,7 @@ function Radar() {
 export function AuthScreen(p: Props) {
   const login = p.mode === "login";
   return (
-    <main className="auth">
+    <main className="auth auth-yellow">
       <section className="auth-intro">
         <header className="brand">
           <LensMark size={40} />
